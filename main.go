@@ -25,6 +25,10 @@ type Wallet struct {
 	Score      int
 }
 
+func (w Wallet) String() string {
+	return fmt.Sprintf("key: %s address: %s score: %d", hex.EncodeToString(crypto.FromECDSA(w.PrivateKey)), w.Address, w.Score)
+}
+
 var targetInt = flag.Int("b", 0, "target byte")
 
 func main() {
@@ -37,7 +41,7 @@ func main() {
 	}
 	go func() {
 		for w := range recvCh {
-			fmt.Println("privatekey:", hex.EncodeToString(crypto.FromECDSA(w.PrivateKey)), "address:", w.Address, "score:", w.Score)
+			fmt.Println(w.String())
 		}
 	}()
 
@@ -49,11 +53,11 @@ func main() {
 
 func genAndCheck(ch chan Wallet) {
 	c := crypto.S256()
+	privateKey, err := ecdsa.GenerateKey(c, rand.Reader)
+	if err != nil {
+		panic(err)
+	}
 	for {
-		privateKey, err := ecdsa.GenerateKey(c, rand.Reader)
-		if err != nil {
-			panic(err)
-		}
 		address := crypto.PubkeyToAddress(privateKey.PublicKey)
 		score := scoreAddress(&address)
 		if score > bestScore {
@@ -63,8 +67,23 @@ func genAndCheck(ch chan Wallet) {
 				Address:    address,
 				Score:      score,
 			}
+			privateKey = crypto.ToECDSAUnsafe(crypto.FromECDSAPub(&privateKey.PublicKey)[33:])
+		} else {
+			privateKey = increase(privateKey)
 		}
 	}
+}
+
+func increase(k *ecdsa.PrivateKey) *ecdsa.PrivateKey {
+	b := crypto.FromECDSA(k)
+	for i := len(b) - 1; i >= 0; i-- {
+		v := b[i] + 1
+		b[i] = v
+		if v > 0 {
+			break
+		}
+	}
+	return crypto.ToECDSAUnsafe(b)
 }
 
 func scoreAddress(address *common.Address) int {
